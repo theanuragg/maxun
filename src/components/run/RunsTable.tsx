@@ -9,7 +9,7 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TablePagination from '@mui/material/TablePagination';
 import TableRow from '@mui/material/TableRow';
-import { Accordion, AccordionSummary, AccordionDetails, Typography, Box, TextField, CircularProgress, Tooltip } from '@mui/material';
+import { Accordion, AccordionSummary, AccordionDetails, Typography, Box, TextField, CircularProgress, Tooltip, useTheme, useMediaQuery } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SearchIcon from '@mui/icons-material/Search';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -19,13 +19,14 @@ import { RunSettings } from "./RunSettings";
 import { CollapsibleRow } from "./ColapsibleRow";
 import { ArrowDownward, ArrowUpward, UnfoldMore } from '@mui/icons-material';
 
+// Enhanced column definitions with improved width constraints
 export const columns: readonly Column[] = [
-  { id: 'runStatus', label: 'Status', minWidth: 80 },
-  { id: 'name', label: 'Name', minWidth: 80 },
-  { id: 'startedAt', label: 'Started At', minWidth: 80 },
-  { id: 'finishedAt', label: 'Finished At', minWidth: 80 },
-  { id: 'settings', label: 'Settings', minWidth: 80 },
-  { id: 'delete', label: 'Delete', minWidth: 80 },
+  { id: 'runStatus', label: 'Status', minWidth: 100, maxWidth: 120, flex: 0.5 },
+  { id: 'name', label: 'Name', minWidth: 150, flex: 1.5 },
+  { id: 'startedAt', label: 'Started At', minWidth: 130, flex: 1 },
+  { id: 'finishedAt', label: 'Finished At', minWidth: 130, flex: 1 },
+  { id: 'settings', label: 'Settings', minWidth: 100, maxWidth: 120, flex: 0.5 },
+  { id: 'delete', label: 'Delete', minWidth: 80, maxWidth: 100, flex: 0.5 },
 ];
 
 type SortDirection = 'asc' | 'desc' | 'none';
@@ -41,6 +42,8 @@ interface Column {
   id: 'runStatus' | 'name' | 'startedAt' | 'finishedAt' | 'delete' | 'settings';
   label: string;
   minWidth?: number;
+  maxWidth?: number;
+  flex?: number;
   align?: 'right';
   format?: (value: string) => string;
 }
@@ -86,6 +89,9 @@ export const RunsTable: React.FC<RunsTableProps> = ({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isTablet = useMediaQuery(theme.breakpoints.down('md'));
 
   const getUrlParams = () => {
     const match = location.pathname.match(/\/runs\/([^\/]+)(?:\/run\/([^\/]+))?/);
@@ -123,16 +129,33 @@ export const RunsTable: React.FC<RunsTableProps> = ({
     });
   }, []);
 
-  const translatedColumns = useMemo(() => 
-    columns.map(column => ({
+  // Responsive column adjustments based on screen size
+  const responsiveColumns = useMemo(() => {
+    let adjustedColumns = [...columns];
+    
+    if (isMobile) {
+      // Show only essential columns on mobile
+      adjustedColumns = columns.filter(col => 
+        ['runStatus', 'name', 'startedAt'].includes(col.id)
+      );
+    } else if (isTablet) {
+      // Adjust column widths for tablet
+      adjustedColumns = columns.map(col => ({
+        ...col,
+        minWidth: col.minWidth ? Math.max(col.minWidth * 0.8, 70) : undefined,
+        flex: col.flex ? col.flex * 0.9 : undefined
+      }));
+    }
+    
+    return adjustedColumns.map(column => ({
       ...column,
       label: t(`runstable.${column.id}`, column.label)
-    })),
-    [t]
-  );
+    }));
+  }, [t, isMobile, isTablet]);
 
   const [rows, setRows] = useState<Data[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const [paginationStates, setPaginationStates] = useState<PaginationState>({});
 
@@ -210,6 +233,7 @@ export const RunsTable: React.FC<RunsTableProps> = ({
   }, [debouncedSearch]);
 
   const fetchRuns = useCallback(async () => {
+    setIsLoading(true);
     try {
       const runs = await getStoredRuns();
       if (runs) {
@@ -223,6 +247,8 @@ export const RunsTable: React.FC<RunsTableProps> = ({
       }
     } catch (error) {
       notify('error', t('runstable.notifications.fetch_error'));
+    } finally {
+      setIsLoading(false);
     }
   }, [notify, t]);
 
@@ -360,9 +386,24 @@ export const RunsTable: React.FC<RunsTableProps> = ({
         : <UnfoldMore fontSize="small" />;
   }, [accordionSortConfigs]);
 
+  // Calculate the appropriate table height based on viewport size
+  const tableHeight = useMemo(() => {
+    const baseHeight = 400;
+    if (isMobile) return baseHeight * 0.7;
+    if (isTablet) return baseHeight * 0.85;
+    return baseHeight;
+  }, [isMobile, isTablet]);
+
   return (
     <React.Fragment>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+      <Box 
+        display="flex" 
+        justifyContent="space-between" 
+        alignItems="center" 
+        mb={2}
+        flexDirection={isMobile ? "column" : "row"}
+        gap={isMobile ? 2 : 0}
+      >
         <Typography variant="h6" component="h2">
           {t('runstable.runs', 'Runs')}
         </Typography>
@@ -373,106 +414,191 @@ export const RunsTable: React.FC<RunsTableProps> = ({
           InputProps={{
             startAdornment: <SearchIcon sx={{ color: 'action.active', mr: 1 }} />
           }}
-          sx={{ width: '250px' }}
+          sx={{ width: isMobile ? '100%' : '250px' }}
         />
       </Box>
 
-      <TableContainer component={Paper} sx={{ width: '100%', overflow: 'hidden' }}>
-        {Object.entries(groupedRows)
-          .slice(
-            accordionPage * accordionsPerPage,
-            accordionPage * accordionsPerPage + accordionsPerPage
-          )
-          .map(([robotMetaId, data]) => (
-            <Accordion 
-              key={robotMetaId} 
-              onChange={(event, isExpanded) => handleAccordionChange(robotMetaId, isExpanded)}
-              TransitionProps={{ unmountOnExit: true }} // Optimize accordion rendering
-            >
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="h6">{data[data.length - 1].name}</Typography>
-              </AccordionSummary>
-              <AccordionDetails>
-                <Table stickyHeader aria-label="sticky table">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell />
-                      {translatedColumns.map((column) => (
-                        <TableCell
-                          key={column.id}
-                          align={column.align}
-                          style={{ 
-                            minWidth: column.minWidth,
-                            cursor: column.id === 'startedAt' || column.id === 'finishedAt' ? 'pointer' : 'default'
-                          }}
-                          onClick={() => {
-                            if (column.id === 'startedAt' || column.id === 'finishedAt') {
-                              handleSort(column.id, robotMetaId);
-                            }
-                          }}
-                        >
-                          <Tooltip 
-                            title={
-                              (column.id === 'startedAt' || column.id === 'finishedAt')
-                                ? t('runstable.sort_tooltip')
-                                : ''
-                            }
-                          >
-                            <Box sx={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: 1,
-                              '&:hover': {
-                                '& .sort-icon': {
-                                  opacity: 1
-                                }
-                              }
-                            }}>
-                              {column.label}
-                              <Box className="sort-icon" sx={{ 
-                                display: 'flex',
-                                alignItems: 'center',
-                                opacity: accordionSortConfigs[robotMetaId]?.field === column.id ? 1 : 0.3,
-                                transition: 'opacity 0.2s'
-                              }}>
-                                {renderSortIcon(column, robotMetaId)}
-                              </Box>
-                            </Box>
-                          </Tooltip>
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {renderTableRows(data, robotMetaId)}
-                  </TableBody>
-                </Table>
-
-                <TablePagination
-                  component="div"
-                  count={data.length}
-                  rowsPerPage={getPaginationState(robotMetaId).rowsPerPage}
-                  page={getPaginationState(robotMetaId).page}
-                  onPageChange={(_, newPage) => handleChangePage(robotMetaId, newPage)}
-                  onRowsPerPageChange={(event) => 
-                    handleChangeRowsPerPage(robotMetaId, +event.target.value)
+      {isLoading ? (
+        <Box display="flex" justifyContent="center" mt={4}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <Paper 
+          elevation={3}
+          sx={{ 
+            width: '100%', 
+            overflow: 'hidden',
+            borderRadius: 1,
+            transition: 'all 0.3s ease'
+          }}
+        >
+          {Object.entries(groupedRows)
+            .slice(
+              accordionPage * accordionsPerPage,
+              accordionPage * accordionsPerPage + accordionsPerPage
+            )
+            .map(([robotMetaId, data]) => (
+              <Accordion 
+                key={robotMetaId} 
+                onChange={(event, isExpanded) => handleAccordionChange(robotMetaId, isExpanded)}
+                TransitionProps={{ 
+                  unmountOnExit: true,
+                  timeout: 300
+                }}
+                sx={{
+                  '&:before': {
+                    display: 'none', // Remove accordion line
+                  },
+                  boxShadow: 'none',
+                  '& .MuiAccordionSummary-root': {
+                    minHeight: 64,
+                    padding: theme.spacing(0, 2),
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                    }
+                  },
+                  '& .MuiAccordionDetails-root': {
+                    padding: theme.spacing(1),
                   }
-                  rowsPerPageOptions={[10, 25, 50, 100]}
-                />
-              </AccordionDetails>
-            </Accordion>
-          ))}
-      </TableContainer>
+                }}
+              >
+                <AccordionSummary 
+                  expandIcon={<ExpandMoreIcon />}
+                  aria-controls={`panel-${robotMetaId}-content`}
+                  id={`panel-${robotMetaId}-header`}
+                >
+                  <Typography variant="h6">{data[data.length - 1].name}</Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <TableContainer 
+                    sx={{ 
+                      maxHeight: tableHeight,
+                      transition: 'max-height 0.3s ease'
+                    }}
+                  >
+                    <Table 
+                      stickyHeader 
+                      aria-label="sticky table"
+                      sx={{
+                        tableLayout: "fixed", // Important for column sizing
+                        "& .MuiTableCell-root": {
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          transition: 'width 0.3s ease'
+                        }
+                      }}
+                    >
+                      <TableHead>
+                        <TableRow>
+                          <TableCell 
+                            sx={{ 
+                              width: 48, 
+                              minWidth: 48, 
+                              padding: theme.spacing(1, 0, 1, 1) 
+                            }} 
+                          />
+                          {responsiveColumns.map((column) => (
+                            <TableCell
+                              key={column.id}
+                              align={column.align}
+                              sx={{ 
+                                minWidth: column.minWidth,
+                                maxWidth: column.maxWidth,
+                                width: column.flex ? `${column.flex * 100}%` : 'auto',
+                                cursor: column.id === 'startedAt' || column.id === 'finishedAt' ? 'pointer' : 'default',
+                                padding: isMobile ? theme.spacing(1) : undefined,
+                                transition: 'all 0.2s ease'
+                              }}
+                              onClick={() => {
+                                if (column.id === 'startedAt' || column.id === 'finishedAt') {
+                                  handleSort(column.id, robotMetaId);
+                                }
+                              }}
+                            >
+                              <Tooltip 
+                                title={
+                                  (column.id === 'startedAt' || column.id === 'finishedAt')
+                                    ? t('runstable.sort_tooltip')
+                                    : ''
+                                }
+                              >
+                                <Box sx={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  gap: 1,
+                                  '&:hover': {
+                                    '& .sort-icon': {
+                                      opacity: 1
+                                    }
+                                  }
+                                }}>
+                                  {column.label}
+                                  <Box className="sort-icon" sx={{ 
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    opacity: accordionSortConfigs[robotMetaId]?.field === column.id ? 1 : 0.3,
+                                    transition: 'opacity 0.2s'
+                                  }}>
+                                    {renderSortIcon(column, robotMetaId)}
+                                  </Box>
+                                </Box>
+                              </Tooltip>
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {renderTableRows(data, robotMetaId)}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
 
-      <TablePagination
-        component="div"
-        count={Object.keys(groupedRows).length}
-        page={accordionPage}
-        rowsPerPage={accordionsPerPage}
-        onPageChange={handleAccordionPageChange}
-        onRowsPerPageChange={handleAccordionsPerPageChange}
-        rowsPerPageOptions={[10, 25, 50, 100]}
-      />
+                  <TablePagination
+                    component="div"
+                    count={data.length}
+                    rowsPerPage={getPaginationState(robotMetaId).rowsPerPage}
+                    page={getPaginationState(robotMetaId).page}
+                    onPageChange={(_, newPage) => handleChangePage(robotMetaId, newPage)}
+                    onRowsPerPageChange={(event) => 
+                      handleChangeRowsPerPage(robotMetaId, +event.target.value)
+                    }
+                    rowsPerPageOptions={[10, 25, 50, 100]}
+                    labelRowsPerPage={isMobile ? "" : t('runstable.rows_per_page')}
+                    sx={{
+                      '.MuiTablePagination-selectLabel': {
+                        display: isMobile ? 'none' : 'block'
+                      },
+                      '.MuiTablePagination-displayedRows': {
+                        margin: isMobile ? '0 auto' : undefined
+                      }
+                    }}
+                  />
+                </AccordionDetails>
+              </Accordion>
+            ))}
+
+          <TablePagination
+            component="div"
+            count={Object.keys(groupedRows).length}
+            page={accordionPage}
+            rowsPerPage={accordionsPerPage}
+            onPageChange={handleAccordionPageChange}
+            onRowsPerPageChange={handleAccordionsPerPageChange}
+            rowsPerPageOptions={[10, 25, 50, 100]}
+            labelRowsPerPage={isMobile ? "" : t('runstable.accordions_per_page', 'Robots per page')}
+            sx={{
+              '.MuiTablePagination-selectLabel': {
+                display: isMobile ? 'none' : 'block'
+              },
+              '.MuiTablePagination-displayedRows': {
+                margin: isMobile ? '0 auto' : undefined
+              }
+            }}
+          />
+        </Paper>
+      )}
     </React.Fragment>
   );
 };
