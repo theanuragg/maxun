@@ -6,7 +6,7 @@
   "typings": "build/index.d.ts",
   "scripts": {
     "test": "jest",
-    "build": "npm run clean && tsc",
+    "build": "node init && npm run clean && tsc",
     "lint": "eslint .",
     "clean": "rimraf ./build"
   },
